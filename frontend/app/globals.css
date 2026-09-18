@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-ink-900 text-slate-200 antialiased;
+  font-family: var(--font-sans);
+}
+
+/* slim dark scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2e3a66; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #444e78; }
+
+@layer components {
+  .card {
+    @apply bg-ink-800 border border-ink-600 rounded-xl;
+  }
+  .input {
+    @apply w-full bg-ink-900 border border-ink-500 rounded-lg px-3 py-2 text-sm
+      text-slate-200 placeholder-subtle focus:outline-none focus:border-accent
+      disabled:opacity-50;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm
+      font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent-hover;
+  }
+  .btn-ghost {
+    @apply btn bg-ink-700 text-slate-300 hover:bg-ink-600 border border-ink-500;
+  }
+  .btn-danger {
+    @apply btn bg-red-900/60 text-red-200 hover:bg-red-900 border border-red-800;
+  }
+  .label {
+    @apply block text-xs font-medium text-muted mb-1.5;
+  }
+  .th {
+    @apply text-left text-xs font-semibold uppercase tracking-wider text-muted
+      px-4 py-3 border-b border-ink-600 whitespace-nowrap;
+  }
+  .td {
+    @apply px-4 py-3 text-sm border-b border-ink-700/60 whitespace-nowrap;
+  }
+}
+
+/* skeleton shimmer */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  @apply bg-ink-700 rounded-md;
+  background-image: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+/* live pulse dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+.live-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* recharts dark theme defaults */
+.recharts-cartesian-axis-tick text { fill: #8b93ad; font-size: 11px; }
+.recharts-tooltip-cursor { fill: rgba(255,255,255,0.04); }
