@@ -1,0 +1,258 @@
+// InsightFlow — Prisma schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Identity ───────────────────────────
+
+enum Role {
+  ADMIN
+  ANALYST
+  USER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens  RefreshToken[]
+  ownedProjects  Project[]         @relation("ProjectOwner")
+  memberships    ProjectMember[]
+  insights       AIInsight[]
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+  replacedBy String?
+
+  @@index([userId])
+}
+
+// ─────────────────────────── Projects ───────────────────────────
+
+enum MemberRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  websiteUrl  String?
+  ownerId     String
+  owner       User     @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members   ProjectMember[]
+  apiKeys   ApiKey[]
+  events    Event[]
+  sessions  Session[]
+  funnels   Funnel[]
+  anomalies Anomaly[]
+  insights  AIInsight[]
+  reports   Report[]
+
+  @@index([ownerId])
+}
+
+model ProjectMember {
+  id        String     @id @default(cuid())
+  projectId String
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      MemberRole @default(VIEWER)
+  createdAt DateTime   @default(now())
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+// ─────────────────────────── API keys ───────────────────────────
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+}
+
+model ApiKey {
+  id         String       @id @default(cuid())
+  projectId  String
+  project    Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name       String       @default("Default key")
+  // `if_live_` + random. Only the SHA-256 hash is stored — the plaintext key is
+  // shown to the user exactly once at creation time.
+  prefix     String       // first ~12 chars, e.g. "if_live_ab12" for display/lookup
+  keyHash    String       @unique
+  lastFour   String
+  status     ApiKeyStatus @default(ACTIVE)
+  lastUsedAt DateTime?
+  createdAt  DateTime     @default(now())
+  revokedAt  DateTime?
+
+  @@index([projectId])
+}
+
+// ─────────────────────────── Events / sessions ───────────────────────────
+
+model Event {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name       String   // PAGE_VIEW, PURCHASE, custom…
+  userId     String
+  sessionId  String
+  page       String?
+  referrer   String?
+  source     String?  // traffic source (utm_source / referrer host)
+  medium     String?
+  device     String?  // desktop | mobile | tablet
+  browser    String?
+  os         String?
+  country    String?
+  properties Json?
+  timestamp  DateTime // client-supplied event time
+  receivedAt DateTime @default(now())
+
+  @@index([projectId, timestamp])
+  @@index([projectId, name, timestamp])
+  @@index([projectId, userId])
+  @@index([projectId, sessionId])
+  @@index([sessionId])
+}
+
+model Session {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sessionId   String   // external session id sent by SDK
+  userId      String
+  startedAt   DateTime
+  lastEventAt DateTime
+  eventCount  Int      @default(0)
+  page        String?  // landing page
+  device      String?
+  browser     String?
+  os          String?
+  country     String?
+  source      String?
+  converted   Boolean  @default(false)
+
+  @@unique([projectId, sessionId])
+  @@index([projectId, startedAt])
+  @@index([projectId, userId])
+}
+
+// ─────────────────────────── Funnels ───────────────────────────
+
+model Funnel {
+  id        String       @id @default(cuid())
+  projectId String
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  windowDays Int         @default(7) // max days allowed to complete the funnel
+  steps     FunnelStep[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([projectId])
+}
+
+model FunnelStep {
+  id        String @id @default(cuid())
+  funnelId  String
+  funnel    Funnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  eventName String
+  order     Int
+
+  @@unique([funnelId, order])
+}
+
+// ─────────────────────────── Intelligence ───────────────────────────
+
+enum AnomalySeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Anomaly {
+  id         String          @id @default(cuid())
+  projectId  String
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  metric     String          // e.g. "event_count:PURCHASE", "unique_users"
+  severity   AnomalySeverity
+  direction  String          // "spike" | "drop"
+  baseline   Float           // historical mean
+  observed   Float           // observed value
+  zScore     Float
+  message    String
+  detectedAt DateTime        @default(now())
+  window     String          // e.g. "hourly", "daily"
+  metadata   Json?
+
+  @@index([projectId, detectedAt])
+}
+
+model AIInsight {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question  String
+  answer    String
+  model     String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+enum ReportType {
+  WEEKLY
+  MONTHLY
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+model Report {
+  id          String       @id @default(cuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        ReportType
+  status      ReportStatus @default(PENDING)
+  periodStart DateTime
+  periodEnd   DateTime
+  data        Json?        // computed metrics payload
+  summary     String?      // AI-generated narrative (or statistical fallback)
+  error       String?
+  jobId       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([projectId, createdAt])
+}

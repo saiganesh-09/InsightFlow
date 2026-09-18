@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>InsightFlow Demo — Live Event Generator</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #0b1020; color: #e6e9f2; min-height: 100vh;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #8b93ad; font-size: 14px; margin-bottom: 24px; }
+  .card {
+    background: #121831; border: 1px solid #232c4d; border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: #8b93ad; margin: 0 0 14px; }
+  label { display: block; font-size: 12px; color: #8b93ad; margin: 10px 0 4px; }
+  input, select {
+    width: 100%; background: #0b1020; border: 1px solid #2a3560; color: #e6e9f2;
+    border-radius: 8px; padding: 9px 11px; font-size: 14px; font-family: inherit;
+  }
+  input:focus, select:focus { outline: none; border-color: #4f6df5; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    background: #4f6df5; color: #fff; border: 0; border-radius: 8px;
+    padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  button:hover { background: #5f7bf8; }
+  button.ghost { background: #1d2745; color: #c3cbee; }
+  button.ghost:hover { background: #263252; }
+  button.danger { background: #b33; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .pill { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #1d2745; color: #8fa2ff; }
+  #log { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; max-height: 260px; overflow: auto; }
+  #log div { padding: 3px 0; border-bottom: 1px solid #1a2240; }
+  #log .ok { color: #6ee7a0; } #log .err { color: #ff7a7a; } #log .info { color: #8b93ad; }
+  .sim { display: flex; align-items: center; gap: 12px; }
+  .sim.on .dot { background: #6ee7a0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #444e78; }
+  footer { color: #5a648a; font-size: 12px; margin-top: 24px; }
+  a { color: #8fa2ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>InsightFlow <span class="pill">Demo event generator</span></h1>
+  <p class="sub">
+    This page uses the real tracking SDK (<code>/sdk/insightflow.js</code>) to send events to your
+    InsightFlow backend. Open the dashboard's <b>Realtime</b> page to watch them arrive.
+  </p>
+
+  <div class="card">
+    <h2>1 — Connect</h2>
+    <div class="row">
+      <div>
+        <label>Project API key</label>
+        <input id="apiKey" placeholder="if_live_…" autocomplete="off" />
+      </div>
+      <div>
+        <label>Backend endpoint</label>
+        <input id="endpoint" value="http://localhost:4000" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>User ID</label>
+        <input id="userId" value="demo_user_1" />
+      </div>
+      <div>
+        <label>Session ID</label>
+        <input id="sessionId" placeholder="auto-generated" />
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <button id="connect">Connect SDK</button>
+      <span id="status" class="pill" style="margin-left:10px">not connected</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2 — Fire individual events</h2>
+    <div class="grid" id="buttons"></div>
+  </div>
+
+  <div class="card sim" id="simCard">
+    <div class="dot"></div>
+    <div style="flex:1">
+      <h2 style="margin-bottom:4px">3 — Traffic simulator</h2>
+      <div style="font-size:13px;color:#8b93ad">Generates a realistic stream: page views, product views, carts, checkouts, purchases (and occasional failures).</div>
+    </div>
+    <select id="simRate" style="width:auto">
+      <option value="800">Fast (~1 event/0.8s)</option>
+      <option value="2000" selected>Normal (~1 event/2s)</option>
+      <option value="5000">Slow (~1 event/5s)</option>
+    </select>
+    <button id="simToggle" class="ghost">Start simulation</button>
+  </div>
+
+  <div class="card">
+    <h2>Event log</h2>
+    <div id="log"><div class="info">Events you send will appear here…</div></div>
+  </div>
+
+  <footer>
+    SDK source: <a href="/sdk/insightflow.js">/sdk/insightflow.js</a> ·
+    API docs: <a href="/api-docs">/api-docs</a>
+  </footer>
+</div>
+
+<script src="/sdk/insightflow.js"></script>
+<script>
+(function () {
+  var EVENTS = ["PAGE_VIEW","PRODUCT_VIEW","SEARCH","ADD_TO_CART","BUTTON_CLICK","CHECKOUT","PURCHASE","PAYMENT_FAILED","VIDEO_PLAY","SIGNUP","LOGIN"];
+  var PAGES = ["/", "/products", "/products/1", "/products/2", "/pricing", "/features", "/checkout", "/blog/launch"];
+  var SOURCES = ["direct", "google", "facebook", "twitter", "newsletter"];
+  var connected = false, simTimer = null, simUser = 1;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var logEl = $("log");
+
+  function log(msg, cls) {
+    var d = document.createElement("div");
+    d.className = cls || "info";
+    d.textContent = new Date().toLocaleTimeString() + "  " + msg;
+    logEl.prepend(d);
+    while (logEl.children.length > 80) logEl.lastChild.remove();
+  }
+
+  function send(name, props) {
+    if (!connected) { log("Connect the SDK first", "err"); return; }
+    InsightFlow.track(name, props || {});
+    log("→ " + name + " " + JSON.stringify(props || {}), "ok");
+  }
+
+  $("connect").onclick = function () {
+    var key = $("apiKey").value.trim();
+    if (!key) { log("Enter an API key", "err"); return; }
+    InsightFlow.init({
+      apiKey: key,
+      endpoint: $("endpoint").value.trim(),
+      userId: $("userId").value.trim() || undefined,
+      sessionId: $("sessionId").value.trim() || undefined,
+    });
+    connected = true;
+    $("status").textContent = "connected · session " + InsightFlow._state.sessionId;
+    log("SDK initialized against " + $("endpoint").value, "ok");
+    send("PAGE_VIEW", { page: "/demo" });
+  };
+
+  var btns = $("buttons");
+  EVENTS.forEach(function (name) {
+    var b = document.createElement("button");
+    b.className = "ghost";
+    b.textContent = name;
+    b.onclick = function () {
+      var props = { page: PAGES[Math.floor(Math.random() * PAGES.length)] };
+      if (name === "ADD_TO_CART" || name === "PRODUCT_VIEW") props.productId = String(1 + Math.floor(Math.random() * 3));
+      if (name === "PURCHASE") { props.orderId = "ord_" + Date.now(); props.total = 20 + Math.floor(Math.random() * 300); }
+      if (name === "PAYMENT_FAILED") props.reason = "card_declined";
+      if (name === "SEARCH") props.query = "shoes";
+      send(name, props);
+    };
+    btns.appendChild(b);
+  });
+
+  var SEQ = [
+    function () { send("PAGE_VIEW", { page: "/" }); },
+    function () { send("PRODUCT_VIEW", { page: "/products/1", productId: "1" }); },
+    function () { send("ADD_TO_CART", { page: "/products", productId: "1", price: 99 }); },
+    function () { send("CHECKOUT", { page: "/checkout", cartSize: 1 }); },
+    function () {
+      if (Math.random() < 0.12) send("PAYMENT_FAILED", { page: "/checkout", reason: "card_declined" });
+      else send("PURCHASE", { page: "/checkout", orderId: "ord_" + Date.now(), total: 99 });
+    },
+  ];
+  var seqIdx = 0;
+
+  $("simToggle").onclick = function () {
+    if (simTimer) {
+      clearInterval(simTimer); simTimer = null;
+      $("simCard").classList.remove("on");
+      $("simToggle").textContent = "Start simulation";
+      log("Simulation stopped");
+      return;
+    }
+    if (!connected) { log("Connect the SDK first", "err"); return; }
+    var ms = parseInt($("simRate").value, 10);
+    $("simCard").classList.add("on");
+    $("simToggle").textContent = "Stop simulation";
+    log("Simulation started");
+    simTimer = setInterval(function () {
+      // rotate synthetic users every full sequence
+      if (seqIdx === 0) {
+        simUser = 1 + Math.floor(Math.random() * 6);
+        InsightFlow.identify("sim_user_" + simUser);
+        InsightFlow._state.sessionId = "sim_sess_" + Date.now() + "_" + simUser;
+      }
+      SEQ[seqIdx]();
+      seqIdx = (seqIdx + 1) % SEQ.length;
+    }, ms);
+  };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "insightflow-sdk",
+  "version": "1.0.0",
+  "description": "InsightFlow event tracking SDK — send product analytics events to an InsightFlow backend",
+  "main": "insightflow.js",
+  "browser": "insightflow.js",
+  "types": "insightflow.d.ts",
+  "files": ["insightflow.js", "insightflow.d.ts"],
+  "scripts": {
+    "typecheck": "echo \"SDK is plain JS — no typecheck\" && exit 0",
+    "build": "echo \"SDK ships pre-built (insightflow.js)\""
+  },
+  "license": "MIT"
+}

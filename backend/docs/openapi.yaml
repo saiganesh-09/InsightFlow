@@ -1,0 +1,607 @@
+openapi: 3.0.3
+info:
+  title: InsightFlow API
+  version: "1.0.0"
+  description: |
+    AI-powered real-time product analytics platform.
+
+    **Two authentication schemes:**
+    - `BearerAuth` — JWT access token for the dashboard APIs (`/api/auth/*`, `/api/projects/*`)
+    - `ApiKeyAuth` — project API key (`x-api-key: if_live_…`) for event ingestion (`/api/events`)
+servers:
+  - url: http://localhost:4000
+tags:
+  - name: Auth
+  - name: Projects
+  - name: API Keys
+  - name: Ingestion
+  - name: Analytics
+  - name: Funnels
+  - name: Anomalies
+  - name: Insights
+  - name: Reports
+  - name: Export
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [ADMIN, ANALYST, USER] }
+        createdAt: { type: string, format: date-time }
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        websiteUrl: { type: string, nullable: true }
+        ownerId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    EventIn:
+      type: object
+      required: [event, userId, sessionId]
+      properties:
+        event:
+          type: string
+          example: PAGE_VIEW
+          description: UPPER_SNAKE event name (standard or custom)
+        userId: { type: string, example: user_123 }
+        sessionId: { type: string, example: sess_abc }
+        page: { type: string, example: /products }
+        referrer: { type: string }
+        source: { type: string, example: google }
+        medium: { type: string, example: cpc }
+        device: { type: string, enum: [desktop, mobile, tablet] }
+        browser: { type: string }
+        os: { type: string }
+        country: { type: string }
+        properties:
+          type: object
+          additionalProperties: true
+          description: Arbitrary event metadata (max 50 keys)
+        timestamp:
+          type: string
+          format: date-time
+          description: Defaults to server receive time
+    RangeParams:
+      type: object
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        country: { type: string }
+        device: { type: string }
+        browser: { type: string }
+        os: { type: string }
+        source: { type: string }
+  parameters:
+    projectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: string }
+
+paths:
+  /api/health:
+    get:
+      summary: Service health + capability status
+      tags: [Auth]
+      responses:
+        "200": { description: OK }
+
+  /api/auth/register:
+    post:
+      summary: Register a new account
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name, password]
+              properties:
+                email: { type: string }
+                name: { type: string }
+                password: { type: string, description: "min 8 chars, letter + number" }
+      responses:
+        "200": { description: "accessToken + user (refresh token set as httpOnly cookie)" }
+        "400": { description: Validation error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Email already registered }
+
+  /api/auth/login:
+    post:
+      summary: Log in
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: accessToken + user }
+        "401": { description: Invalid credentials }
+
+  /api/auth/refresh:
+    post:
+      summary: Rotate the refresh cookie for a new access token
+      tags: [Auth]
+      responses:
+        "200": { description: New accessToken + user }
+        "401": { description: Missing/invalid refresh token }
+
+  /api/auth/logout:
+    post:
+      summary: Revoke refresh token and clear cookie
+      tags: [Auth]
+      responses:
+        "200": { description: Logged out }
+
+  /api/auth/me:
+    get:
+      summary: Current user profile
+      tags: [Auth]
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: Current user }
+        "401": { description: Unauthorized }
+    patch:
+      summary: Update profile (name)
+      tags: [Auth]
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: Updated user }
+
+  /api/auth/change-password:
+    post:
+      summary: Change password (revokes all sessions)
+      tags: [Auth]
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string }
+      responses:
+        "200": { description: Password changed }
+
+  /api/projects:
+    get:
+      summary: List projects the user owns or belongs to
+      tags: [Projects]
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: Project list }
+    post:
+      summary: Create a project
+      tags: [Projects]
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                websiteUrl: { type: string }
+      responses:
+        "200": { description: Created project }
+
+  /api/projects/{projectId}:
+    get:
+      summary: Get a project
+      tags: [Projects]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: Project }
+        "404": { description: Not found / no access }
+    patch:
+      summary: Update a project
+      tags: [Projects]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: Updated project }
+    delete:
+      summary: Delete a project (owner only)
+      tags: [Projects]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "204": { description: Deleted }
+
+  /api/projects/{projectId}/api-keys:
+    get:
+      summary: List API keys (masked)
+      tags: [API Keys]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: Masked keys }
+    post:
+      summary: Create an API key — plaintext returned once
+      tags: [API Keys]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { name: { type: string } }
+      responses:
+        "200": { description: "{ apiKey (masked), plaintext (shown once) }" }
+
+  /api/projects/{projectId}/api-keys/{keyId}/rotate:
+    post:
+      summary: Rotate an API key (new key issued, old revoked)
+      tags: [API Keys]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: keyId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "{ apiKey, plaintext }" }
+
+  /api/projects/{projectId}/api-keys/{keyId}:
+    delete:
+      summary: Revoke an API key
+      tags: [API Keys]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: keyId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Revoked }
+
+  /api/events:
+    post:
+      summary: Ingest a single analytics event (rate-limited per API key)
+      tags: [Ingestion]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventIn" }
+      responses:
+        "200": { description: "{ accepted: 1 }" }
+        "400": { description: Validation failed }
+        "401": { description: Missing/invalid API key }
+        "429": { description: Rate limit exceeded }
+
+  /api/events/batch:
+    post:
+      summary: Ingest up to 100 events in one request
+      tags: [Ingestion]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  maxItems: 100
+                  items: { $ref: "#/components/schemas/EventIn" }
+      responses:
+        "200": { description: "{ accepted: n }" }
+
+  /api/projects/{projectId}/analytics/overview:
+    get:
+      summary: Headline metrics for a date range (+ previous-period comparison)
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200": { description: events/users/sessions/conversions/conversionRate/avgSessionDuration }
+
+  /api/projects/{projectId}/analytics/timeseries:
+    get:
+      summary: Bucketed timeseries for events/users/sessions
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: metric, in: query, schema: { type: string, enum: [events, users, sessions] } }
+        - { name: interval, in: query, schema: { type: string, enum: [hour, day] } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200": { description: "{ metric, interval, points: [{t, value}] }" }
+
+  /api/projects/{projectId}/analytics/top-pages:
+    get:
+      summary: Top pages by PAGE_VIEW
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: pages[] }
+
+  /api/projects/{projectId}/analytics/top-events:
+    get:
+      summary: Top event names by count
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: events[] }
+
+  /api/projects/{projectId}/analytics/traffic-sources:
+    get:
+      summary: Sessions/users grouped by traffic source
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: sources[] }
+
+  /api/projects/{projectId}/analytics/breakdown/{dimension}:
+    get:
+      summary: Breakdown by device | browser | os | country
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: dimension, in: path, required: true, schema: { type: string, enum: [device, browser, os, country] } }
+      responses:
+        "200": { description: values[] }
+
+  /api/projects/{projectId}/analytics/realtime:
+    get:
+      summary: Realtime snapshot (active users, last-hour events, recent feed)
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: "{ activeUsers, eventsLastHour, activePages, recentEvents }" }
+
+  /api/projects/{projectId}/analytics/segments:
+    get:
+      summary: User segmentation totals (new vs returning, conversion)
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: segments }
+
+  /api/projects/{projectId}/analytics/users:
+    get:
+      summary: Most active users table
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: users[] }
+
+  /api/projects/{projectId}/analytics/sessions:
+    get:
+      summary: Paginated session list with durations
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: "{ total, sessions[] }" }
+
+  /api/projects/{projectId}/analytics/events:
+    get:
+      summary: Event explorer — cursor-paginated, filterable
+      tags: [Analytics]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: userId, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: "{ events, total, nextCursor, eventNames }" }
+
+  /api/projects/{projectId}/funnels:
+    get:
+      summary: List funnels
+      tags: [Funnels]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: funnels[] }
+    post:
+      summary: Create a funnel (ordered event steps)
+      tags: [Funnels]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, steps]
+              properties:
+                name: { type: string }
+                windowDays: { type: integer, default: 7 }
+                steps: { type: array, items: { type: string }, example: [PAGE_VIEW, PRODUCT_VIEW, PURCHASE] }
+      responses:
+        "200": { description: Created funnel }
+
+  /api/projects/{projectId}/funnels/{funnelId}/results:
+    get:
+      summary: Compute funnel conversion (ordered first-occurrence per user)
+      tags: [Funnels]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: funnelId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "{ steps[], overallConversion, entered, completed }" }
+
+  /api/projects/{projectId}/anomalies:
+    get:
+      summary: List statistically-detected anomalies
+      tags: [Anomalies]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: anomalies[] }
+
+  /api/projects/{projectId}/anomalies/scan:
+    post:
+      summary: Trigger an anomaly scan now
+      tags: [Anomalies]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: "{ created: anomalies[] }" }
+
+  /api/projects/{projectId}/insights:
+    get:
+      summary: Insight history + AI availability flag
+      tags: [Insights]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: "{ insights[], aiConfigured }" }
+
+  /api/projects/{projectId}/insights/ask:
+    post:
+      summary: Ask a natural-language question about this project's analytics
+      tags: [Insights]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties: { question: { type: string } }
+      responses:
+        "200": { description: "{ insight: { question, answer } }" }
+        "503": { description: AI not configured }
+
+  /api/projects/{projectId}/reports:
+    get:
+      summary: List reports
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      responses:
+        "200": { description: reports[] }
+    post:
+      summary: Generate a report (queued via BullMQ)
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/projectId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties: { type: { type: string, enum: [WEEKLY, MONTHLY] } }
+      responses:
+        "200": { description: "{ report (PENDING → COMPLETED) }" }
+
+  /api/projects/{projectId}/reports/{reportId}:
+    get:
+      summary: Report detail (metrics + AI summary)
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: reportId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: report }
+    delete:
+      summary: Delete a report
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: reportId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+
+  /api/projects/{projectId}/reports/{reportId}/download:
+    get:
+      summary: Download report as Markdown
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: reportId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: text/markdown }
+
+  /api/projects/{projectId}/export/events.csv:
+    get:
+      summary: Export raw events as CSV
+      tags: [Export]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: text/csv }
+
+  /api/projects/{projectId}/export/analytics.csv:
+    get:
+      summary: Export analytics dataset as CSV
+      tags: [Export]
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/projectId" }
+        - { name: dataset, in: query, schema: { type: string, enum: [timeseries, top-pages, top-events, traffic-sources] } }
+        - { name: metric, in: query, schema: { type: string, enum: [events, users, sessions] } }
+      responses:
+        "200": { description: text/csv }
