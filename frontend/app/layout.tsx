@@ -8,8 +8,10 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // suppressHydrationWarning: browser extensions (e.g. the WICG focus-visible
+  // polyfill) inject js-focus-visible attributes into <html> before hydration.
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
         <Providers>{children}</Providers>
       </body>
