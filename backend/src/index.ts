@@ -2,7 +2,7 @@ import http from "node:http";
 import { createApp } from "./app.js";
 import { config } from "./config.js";
 import { logger } from "./lib/logger.js";
-import { getRedis } from "./lib/redis.js";
+import { awaitRedisReady, getRedis } from "./lib/redis.js";
 import { createSocketServer } from "./realtime/socket.js";
 import { scheduleAnomalyScan, closeQueues } from "./queues/index.js";
 import { startWorkers, stopWorkers } from "./queues/workers.js";
@@ -17,6 +17,7 @@ async function main() {
 
   // Start embedded workers + scheduled jobs when Redis is available.
   // In production you can instead run `npm run start:worker` as a separate process.
+  await awaitRedisReady(3000);
   startWorkers();
   await scheduleAnomalyScan().catch((err) =>
     logger.warn(`Could not schedule anomaly scan: ${(err as Error).message}`)

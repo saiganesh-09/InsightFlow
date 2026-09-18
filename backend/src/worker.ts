@@ -1,5 +1,5 @@
 import { logger } from "./lib/logger.js";
-import { getRedis } from "./lib/redis.js";
+import { awaitRedisReady, getRedis } from "./lib/redis.js";
 import { scheduleAnomalyScan, closeQueues } from "./queues/index.js";
 import { startWorkers, stopWorkers } from "./queues/workers.js";
 import { prisma } from "./lib/prisma.js";
@@ -10,6 +10,10 @@ import { prisma } from "./lib/prisma.js";
  */
 async function main() {
   getRedis();
+  if (!(await awaitRedisReady())) {
+    logger.error("Workers require Redis — REDIS_URL unreachable. Exiting.");
+    process.exit(1);
+  }
   const workers = startWorkers();
   if (workers.length === 0) {
     logger.error("Workers require Redis — REDIS_URL unreachable. Exiting.");

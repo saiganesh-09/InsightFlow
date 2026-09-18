@@ -56,6 +56,26 @@ export function redisAvailable(): boolean {
   return available;
 }
 
+/** Wait until the Redis handshake completes (or times out). For processes
+ * that require Redis at startup, e.g. the BullMQ worker. */
+export async function awaitRedisReady(timeoutMs = 8000): Promise<boolean> {
+  const r = getRedis();
+  if (!r) return false;
+  if (available) return true;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (available) return true;
+    try {
+      await r.ping();
+      available = true;
+      return true;
+    } catch {
+      await new Promise((res) => setTimeout(res, 200));
+    }
+  }
+  return available;
+}
+
 /** BullMQ requires a dedicated connection per Queue/Worker. */
 export function bullConnection() {
   const url = new URL(config.REDIS_URL);
