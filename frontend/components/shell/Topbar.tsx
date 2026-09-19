@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { useRange } from "@/lib/range";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/types";
 
 const PRESETS = [
@@ -14,7 +14,17 @@ const PRESETS = [
   { key: "30d", label: "Last 30 days" },
 ];
 
-function Dropdown({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+function Dropdown({
+  open,
+  onClose,
+  align = "right",
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  align?: "left" | "right";
+  children: React.ReactNode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -26,7 +36,13 @@ function Dropdown({ open, onClose, children }: { open: boolean; onClose: () => v
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div ref={ref} className="absolute right-0 top-full mt-1 z-50 card min-w-56 p-1 shadow-xl">
+    <div
+      ref={ref}
+      className={cn(
+        "absolute top-full mt-1 z-50 card min-w-56 p-1 shadow-xl max-h-[calc(100vh-64px)] overflow-y-auto",
+        align === "right" ? "right-0" : "left-0"
+      )}
+    >
       {children}
     </div>
   );
@@ -68,7 +84,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
           <span className="truncate">{currentProject?.name ?? "Select project"}</span>
           <span className="text-subtle">▾</span>
         </button>
-        <Dropdown open={projOpen} onClose={() => setProjOpen(false)}>
+        <Dropdown open={projOpen} onClose={() => setProjOpen(false)} align="left">
           <div className="px-2 py-1.5 text-[11px] uppercase tracking-wider text-subtle">Projects</div>
           {projects.map((p: Project) => (
             <button
