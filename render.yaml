@@ -1,0 +1,81 @@
+# InsightFlow — Render blueprint (free tier)
+#
+# Deploy: Render dashboard → New → Blueprint → point at this repo.
+# Creates: Postgres + Key Value (Redis) + API web service + frontend web service.
+# The BullMQ workers + anomaly scheduler run embedded in the API process
+# (see backend/src/index.ts), so no paid worker instance is needed.
+#
+# NOTE: service names become subdomains (name.onrender.com). If Render assigns
+# a different URL, update FRONTEND_URL / BACKEND_URL / NEXT_PUBLIC_* env vars
+# in the dashboard to match — Render redeploys automatically.
+
+services:
+  # ── Redis (Render Key Value) ──────────────────────────────────────────
+  - type: keyvalue
+    name: insightflow-redis
+    plan: free
+    region: oregon
+    ipAllowList: []                 # internal-only — only our services connect
+    maxmemoryPolicy: noeviction     # BullMQ jobs must never be LRU-evicted
+    persistenceMode: off            # free plan is memory-only
+
+  # ── Backend API (+ embedded BullMQ workers + Socket.IO) ───────────────
+  - type: web
+    name: insightflow-api-lohit
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    # NODE_ENV=production would make `npm ci` skip devDeps — force them in
+    # so tsc + prisma + tsx (for the seed) are available at build/deploy time.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    preDeployCommand: npx prisma migrate deploy && npm run db:seed
+    startCommand: node dist/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: insightflow-pg
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: insightflow-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://insightflow-lohit.onrender.com
+      - key: BACKEND_URL
+        value: https://insightflow-api-lohit.onrender.com
+      - key: OPENAI_API_KEY
+        sync: false            # set manually in the dashboard — never in git
+      - key: OPENAI_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENAI_MODEL
+        value: openai/gpt-4o-mini
+      - key: ALLOW_NO_REDIS
+        value: "false"
+
+  # ── Frontend (Next.js) ────────────────────────────────────────────────
+  - type: web
+    name: insightflow-lohit
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://insightflow-api-lohit.onrender.com
+      - key: NEXT_PUBLIC_WS_URL
+        value: https://insightflow-api-lohit.onrender.com
+
+databases:
+  - name: insightflow-pg
+    plan: free
+    region: oregon
+    databaseName: insightflow

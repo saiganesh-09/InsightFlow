@@ -20,7 +20,7 @@ export function refreshCookieOptions() {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax" as const,
+    sameSite: (process.env.NODE_ENV === "production" ? "none" : "lax") as "none" | "lax",
     path: "/api/auth",
     maxAge: config.JWT_REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
   };
