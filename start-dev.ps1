@@ -52,17 +52,17 @@ else {
 
 Start-Sleep -Seconds 2
 
-# 3) Backend API
+# 3) Backend API (env comes from backend\.env via dotenv)
 if (Up 4000) { "backend: already running" }
 else {
   Start-Process -FilePath "cmd.exe" -WorkingDirectory "$root\backend" -WindowStyle Hidden `
-    -ArgumentList '/c set DATABASE_URL=postgresql://postgres@localhost:5433/insightflow&& set REDIS_URL=redis://localhost:6379&& set JWT_SECRET=dev-secret-0123456789-abcdef&& set NODE_ENV=development&& npx tsx src\index.ts > ..\logs\backend.log 2>&1'
+    -ArgumentList '/c npx tsx src\index.ts > ..\logs\backend.log 2>&1'
   "backend: starting :4000 (logs\backend.log)"
 }
 
 # 4) BullMQ worker
 Start-Process -FilePath "cmd.exe" -WorkingDirectory "$root\backend" -WindowStyle Hidden `
-  -ArgumentList '/c set DATABASE_URL=postgresql://postgres@localhost:5433/insightflow&& set REDIS_URL=redis://localhost:6379&& set JWT_SECRET=dev-secret-0123456789-abcdef&& set NODE_ENV=development&& npx tsx src\worker.ts > ..\logs\worker.log 2>&1'
+  -ArgumentList '/c npx tsx src\worker.ts > ..\logs\worker.log 2>&1'
 "worker: starting (logs\worker.log)"
 
 # 5) Frontend
