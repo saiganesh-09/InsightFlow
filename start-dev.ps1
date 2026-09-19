@@ -1,6 +1,6 @@
 # InsightFlow — start the full local dev stack as detached background processes.
-# Run:  powershell -ExecutionPolicy Bypass -File start-dev.ps1
-# Stops:  stop-dev.ps1
+# Run:   powershell -ExecutionPolicy Bypass -File start-dev.ps1
+# Stop:  powershell -ExecutionPolicy Bypass -File stop-dev.ps1
 $ErrorActionPreference = "Continue"
 $root   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $tools  = Join-Path $env:LOCALAPPDATA "InsightFlow"
@@ -10,19 +10,37 @@ $redis  = Join-Path $tools "redis\Redis-8.10.2-Windows-x64-msys2\redis-server.ex
 $logs   = Join-Path $root "logs"
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
-$env:DATABASE_URL = "postgresql://postgres@localhost:5433/insightflow"
-$env:REDIS_URL    = "redis://localhost:6379"
-$env:JWT_SECRET   = "dev-secret-0123456789-abcdef"
-$env:NODE_ENV     = "development"
-
 function Up($port) { return Test-NetConnection -ComputerName localhost -Port $port -InformationLevel Quiet -WarningAction SilentlyContinue }
+function DbOk {
+  Push-Location "$root\backend"
+  $env:DATABASE_URL = "postgresql://postgres@localhost:5433/insightflow"
+  npx tsx scripts\db-check.ts 2>$null | Out-Null
+  $ok = ($LASTEXITCODE -eq 0)
+  Pop-Location
+  return $ok
+}
+function Start-Postgres {
+  Start-Process -FilePath "$pgbin\postgres.exe" -WindowStyle Hidden `
+    -ArgumentList "-D `"$pgdata`" -p 5433" `
+    -RedirectStandardError "$logs\postgres.log" -RedirectStandardOutput "$logs\postgres-stdout.log"
+  for ($i = 0; $i -lt 20 -and -not (Up 5433); $i++) { Start-Sleep -Seconds 1 }
+}
+function Stop-Postgres {
+  & "$pgbin\pg_ctl.exe" -D $pgdata stop -m immediate 2>$null | Out-Null
+  Get-Process postgres -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
 
-# 1) Postgres
-if (Up 5433) { "postgres: already running" }
+# 1) Postgres — TCP-up is not enough; verify a real query (crashed postmaster
+#    still listens but spawns broken backends → "Internal server error").
+if ((Up 5433) -and (DbOk)) { "postgres: already running (verified)" }
 else {
-  & "$pgbin\pg_ctl.exe" -D $pgdata -o "-p 5433" -l "$logs\postgres.log" start | Out-Null
-  for ($i = 0; $i -lt 15 -and -not (Up 5433); $i++) { Start-Sleep -Seconds 1 }
-  "postgres: started :5433"
+  if (Up 5433) { "postgres: port up but connections failing — restarting"; Stop-Postgres; Start-Sleep -Seconds 2 }
+  Start-Postgres
+  if (-not (DbOk)) {
+    "postgres: still failing — restarting once more (fresh address space)"
+    Stop-Postgres; Start-Sleep -Seconds 2; Start-Postgres
+  }
+  "postgres: $(if (DbOk) {'up :5433'} else {'FAILED — check logs\postgres.log'})"
 }
 
 # 2) Redis
@@ -32,7 +50,7 @@ else {
   "redis: started :6379"
 }
 
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 2
 
 # 3) Backend API
 if (Up 4000) { "backend: already running" }
