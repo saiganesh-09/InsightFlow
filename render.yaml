@@ -29,8 +29,9 @@ services:
     # NODE_ENV=production would make `npm ci` skip devDeps — force them in
     # so tsc + prisma + tsx (for the seed) are available at build/deploy time.
     buildCommand: npm ci --include=dev && npx prisma generate && npm run build
-    preDeployCommand: npx prisma migrate deploy && npm run db:seed
-    startCommand: node dist/index.js
+    # preDeployCommand isn't available on free tier — prod-start.mjs runs
+    # migrate + seed-if-empty at service start instead.
+    startCommand: node scripts/prod-start.mjs
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
