@@ -158,3 +158,7 @@ See `backend/.env.example` — all secrets via env vars, nothing committed.
 - Anomaly metrics are a fixed set; per-project custom metric subscriptions would be the natural extension
 - Cursor pagination on the events explorer is forward-only
 - Playwright e2e specs are a next step (API-level integration tests cover the same flows)
+
+## Contributors
+
+- [Sai Ganesh](https://github.com/saiganesh-09) — maintainer
