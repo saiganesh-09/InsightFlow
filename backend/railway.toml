@@ -1,0 +1,10 @@
+[build]
+builder = "NIXPACKS"
+# NODE_ENV=production is a runtime env var — force devDeps in anyway so
+# tsc + prisma + tsx (for the seed) are available at build/boot time.
+buildCommand = "npm ci --include=dev && npx prisma generate && npm run build"
+
+[deploy]
+# prod-start.mjs runs migrate + seed-if-empty, then starts dist/index.js
+# (BullMQ workers + anomaly scheduler run embedded in the API process).
+startCommand = "node scripts/prod-start.mjs"
