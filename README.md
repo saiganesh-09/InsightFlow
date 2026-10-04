@@ -161,4 +161,5 @@ See `backend/.env.example` — all secrets via env vars, nothing committed.
 
 ## Contributors
 
-- [Siva Neeraj](https://github.com/sivaneerajkadagala-hub) — maintainer
+- [Sai Ganesh](https://github.com/saiganesh-09) — maintainer
+- [Siva Neeraj](https://github.com/sivaneerajkadagala-hub)
